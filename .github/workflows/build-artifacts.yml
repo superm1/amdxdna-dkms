@@ -79,14 +79,11 @@ jobs:
       matrix:
         kernel:
           - name: "OEM 6.14"
-            package: "linux-headers-oem-24.04d"
-            version: "6.14"
+            package: "linux-headers-oem-24.04c"
           - name: "OEM 6.17"
-            package: "linux-headers-oem-24.04"
-            version: "6.17"
+            package: "linux-headers-oem-24.04d"
           - name: "HWE 6.17"
             package: "linux-headers-generic-hwe-24.04"
-            version: "6.17"
 
     name: Test on ${{ matrix.kernel.name }}
     steps:
@@ -106,23 +103,7 @@ jobs:
           sudo apt-get install -y linux-headers-$RUNNING_KERNEL || echo "Could not install headers for running kernel"
 
           # Install headers for the kernel we want to test
-          echo "=== Attempting to install: ${{ matrix.kernel.package }} ==="
-          if sudo apt-get install -y ${{ matrix.kernel.package }}; then
-            echo "✓ Successfully installed ${{ matrix.kernel.package }}"
-          else
-            echo "✗ Failed to install ${{ matrix.kernel.package }}"
-            echo "Searching for available ${{ matrix.kernel.version }} headers..."
-            apt-cache search linux-headers | grep -E "^linux-headers-.*${{ matrix.kernel.version }}" || echo "No matching headers found"
-
-            ALTERNATIVE=$(apt-cache search linux-headers | grep -E "^linux-headers-.*${{ matrix.kernel.version }}" | grep -v "cloud\|lowlatency" | head -1 | awk '{print $1}')
-            if [ -n "$ALTERNATIVE" ]; then
-              echo "Trying alternative: $ALTERNATIVE"
-              sudo apt-get install -y $ALTERNATIVE
-            else
-              echo "ERROR: No suitable kernel headers found for version ${{ matrix.kernel.version }}"
-              exit 1
-            fi
-          fi
+          sudo apt-get install -y ${{ matrix.kernel.package }}
 
       - name: List installed kernels
         run: |
