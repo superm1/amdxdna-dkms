@@ -1,8 +1,10 @@
-name: Build Artifacts
+name: Build and Test
 
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main ]
 
@@ -18,32 +20,235 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y debhelper dkms devscripts
+          sudo apt-get install -y build-essential debhelper dkms devscripts dh-dkms
 
-      - name: Build Debian package
+      - name: Build binary package
         run: |
           dpkg-buildpackage -us -uc -b
+          mkdir -p build-output
+          mv ../*.deb build-output/ || true
+          mv ../*.buildinfo build-output/ || true
+          mv ../*.changes build-output/ || true
+
+      - name: Build source package
+        run: |
+          dpkg-buildpackage -us -uc -S -sa
+          mkdir -p source-output
+          mv ../*.dsc source-output/ || true
+          mv ../*.tar.* source-output/ || true
+          mv ../*.changes source-output/ || true
 
       - name: List package contents
         run: |
           echo "=== Built packages ==="
-          ls -lh ../*.deb
+          ls -lh build-output/*.deb
           echo ""
           echo "=== Package contents ==="
-          dpkg-deb -c ../*.deb
+          dpkg-deb -c build-output/*.deb
 
       - name: Upload Debian package
         uses: actions/upload-artifact@v4
         with:
           name: amdxdna-dkms-deb
-          path: ../*.deb
+          path: build-output/*.deb
           retention-days: 30
 
-      - name: Upload build logs
+      - name: Upload build metadata
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
-          path: ../*.build
+          name: build-metadata
+          path: |
+            build-output/*.buildinfo
+            build-output/*.changes
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Upload source package
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-package
+          path: source-output/*
+          retention-days: 30
+
+  test-kernels:
+    needs: build-deb
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        kernel:
+          - name: "OEM 6.14"
+            package: "linux-headers-6.14.0-1008-oem"
+            version: "6.14"
+          - name: "OEM 6.17"
+            package: "linux-headers-oem-24.04"
+            version: "6.17"
+          - name: "HWE 6.17"
+            package: "linux-headers-generic-hwe-24.04"
+            version: "6.17"
+
+    name: Test on ${{ matrix.kernel.name }}
+    steps:
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: amdxdna-dkms-deb
+
+      - name: Install kernel headers and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dkms build-essential
+          sudo apt-get install -y ${{ matrix.kernel.package }} || {
+            echo "Warning: Could not install ${{ matrix.kernel.package }}"
+            echo "Trying to find alternative ${{ matrix.kernel.version }} headers..."
+            sudo apt-get install -y $(apt-cache search linux-headers | grep -E "^linux-headers-.*${{ matrix.kernel.version }}" | head -1 | awk '{print $1}') || true
+          }
+
+      - name: List installed kernels
+        run: |
+          echo "=== Installed kernel headers ==="
+          ls -la /lib/modules/
+
+      - name: Install DKMS package
+        run: |
+          sudo dpkg -i *.deb || {
+            echo "Package installation failed, checking dependencies..."
+            sudo apt-get install -f -y
+            sudo dpkg -i *.deb
+          }
+
+      - name: Verify DKMS build
+        run: |
+          echo "=== DKMS Status ==="
+          dkms status amdxdna || true
+          dkms status || true
+
+          echo ""
+          echo "=== Checking for built modules ==="
+          ls -la /lib/modules/*/updates/dkms/ 2>/dev/null || echo "No modules in /lib/modules/*/updates/dkms/"
+
+          # Extract version from package filename
+          VERSION=$(dpkg -I *.deb | grep '^ Version:' | awk '{print $2}' | cut -d- -f1)
+          echo ""
+          echo "Package version: $VERSION"
+
+          # Verify module was built
+          if dkms status amdxdna/$VERSION 2>/dev/null | grep -q "installed"; then
+            echo "✓ Module successfully built and installed"
+          else
+            echo "✗ Module build may have failed, checking logs..."
+            echo ""
+            echo "=== DKMS make.log (if exists) ==="
+            sudo find /var/lib/dkms/amdxdna -name "make.log" -exec tail -50 {} \; 2>/dev/null || echo "No build logs found"
+            exit 1
+          fi
+
+      - name: Verify firmware installation
+        run: |
+          echo "=== Firmware Files ==="
+          ls -lR /lib/firmware/updates/amdnpu/
+
+          echo ""
+          echo "=== Verify Symlinks ==="
+          for device in 1502_00 17f0_10 17f0_11; do
+            if [ -L "/lib/firmware/updates/amdnpu/$device/npu.sbin" ]; then
+              echo "✓ $device/npu.sbin symlink exists"
+            else
+              echo "✗ $device/npu.sbin symlink missing"
+              exit 1
+            fi
+
+            if [ -L "/lib/firmware/updates/amdnpu/$device/npu_7.sbin" ]; then
+              echo "✓ $device/npu_7.sbin symlink exists"
+            else
+              echo "✗ $device/npu_7.sbin symlink missing"
+              exit 1
+            fi
+          done
+
+      - name: Check module info
+        run: |
+          echo "=== Module Information ==="
+          # Find the built module
+          VERSION=$(dpkg -I *.deb | grep '^ Version:' | awk '{print $2}' | cut -d- -f1)
+          KERNEL=$(ls /lib/modules/ | grep ${{ matrix.kernel.version }} | head -1)
+
+          if [ -n "$KERNEL" ]; then
+            MODULE_PATH="/lib/modules/$KERNEL/updates/dkms/amdxdna.ko"
+            if [ -f "$MODULE_PATH" ]; then
+              modinfo "$MODULE_PATH" || true
+            else
+              echo "Module not found at $MODULE_PATH"
+            fi
+          else
+            echo "No matching kernel found in /lib/modules/"
+          fi
+
+  upload-ppa:
+    needs: test-kernels
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        ubuntu:
+          - name: "Ubuntu 24.04 LTS"
+            codename: "noble"
+          - name: "Ubuntu 25.10"
+            codename: "questing"
+    name: Upload to PPA for ${{ matrix.ubuntu.name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download source package
+        uses: actions/download-artifact@v4
+        with:
+          name: source-package
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y devscripts dput-ng gnupg
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --import
+          gpg --list-secret-keys
+
+      - name: Retarget for ${{ matrix.ubuntu.codename }}
+        env:
+          DEBFULLNAME: "Mario Limonciello"
+          DEBEMAIL: "superm1@gmail.com"
+        run: |
+          # Extract source package
+          dpkg-source -x *.dsc extracted/
+          cd extracted/
+
+          # Update changelog to target the specific Ubuntu release
+          dch --distribution ${{ matrix.ubuntu.codename }} --force-distribution \
+              "Rebuild for ${{ matrix.ubuntu.name }}"
+
+          # Build signed source package
+          dpkg-buildpackage -S -sa
+
+          # Move artifacts to upload directory
+          cd ..
+          mkdir -p upload/
+          mv *.dsc *.tar.* *.changes upload/
+
+      - name: Upload to PPA
+        run: |
+          # Upload the source package to ppa:amd-team/xrt
+          dput ppa:amd-team/xrt upload/*.changes
+
+      - name: Upload signed source artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-package-${{ matrix.ubuntu.codename }}
+          path: upload/*
+          retention-days: 90

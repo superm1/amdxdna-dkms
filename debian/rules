@@ -1,5 +1,7 @@
 #!/usr/bin/make -f
 
+export DEB_VERSION_UPSTREAM := $(shell dpkg-parsechangelog -S Version | sed 's/-[^-]*$$//')
+
 %:
 	dh $@ --with dkms
 
@@ -13,24 +15,17 @@ override_dh_auto_test:
 	# Skip tests
 
 override_dh_auto_install:
-	# Get version from changelog (strip debian revision)
-	$(eval VERSION := $(shell dpkg-parsechangelog -S Version | sed 's/-[^-]*$$//'))
+	# Substitute version in dkms.conf and install file
+	sed -e 's/__PACKAGE_VERSION__/$(DEB_VERSION_UPSTREAM)/' \
+	    src/amdxdna/dkms.conf > src/amdxdna/dkms.conf.subst
+	mv src/amdxdna/dkms.conf.subst src/amdxdna/dkms.conf
 
-	# Substitute version in dkms.conf
-	sed -e 's/__PACKAGE_VERSION__/$(VERSION)/' \
-	    src/amdxdna/dkms.conf > src/amdxdna/dkms.conf.new
-	mv src/amdxdna/dkms.conf.new src/amdxdna/dkms.conf
+	sed -e 's/__VERSION__/$(DEB_VERSION_UPSTREAM)/g' \
+	    debian/amdxdna-dkms.install > debian/amdxdna-dkms.install.subst
+	mv debian/amdxdna-dkms.install.subst debian/amdxdna-dkms.install
 
-	# Install DKMS source
-	mkdir -p debian/amdxdna-dkms/usr/src/amdxdna-$(VERSION)
-	cp -r src/amdxdna/* debian/amdxdna-dkms/usr/src/amdxdna-$(VERSION)/
-	cp -r src/include debian/amdxdna-dkms/usr/src/amdxdna-$(VERSION)/
-	cp -r src/trace debian/amdxdna-dkms/usr/src/amdxdna-$(VERSION)/
-
-	# Install firmware with symlinks
-	mkdir -p debian/amdxdna-dkms/lib/firmware/updates/amdnpu
-	cp -a firmware/amdnpu/* debian/amdxdna-dkms/lib/firmware/updates/amdnpu/
+	# Let dh_install handle file installation
+	dh_install
 
 override_dh_dkms:
-	$(eval VERSION := $(shell dpkg-parsechangelog -S Version | sed 's/-[^-]*$$//'))
-	dh_dkms -V $(VERSION)
+	dh_dkms -pamdxdna-dkms -V $(DEB_VERSION_UPSTREAM)

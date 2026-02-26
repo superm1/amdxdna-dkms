@@ -22,6 +22,7 @@ debian/amdxdna-dkms/
 debian/files
 debian/*.log
 debian/*.substvars
+debian/*.debhelper
 debian/debhelper-build-stamp
 
 # DKMS build artifacts
