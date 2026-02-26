@@ -136,8 +136,8 @@ jobs:
           echo "=== Checking for built modules ==="
           ls -la /lib/modules/*/updates/dkms/ 2>/dev/null || echo "No modules in /lib/modules/*/updates/dkms/"
 
-          # Extract version from package filename
-          VERSION=$(dpkg -I *.deb | grep '^ Version:' | awk '{print $2}' | cut -d- -f1)
+          # Extract version from package filename (remove debian revision suffix)
+          VERSION=$(dpkg -I *.deb | grep '^ Version:' | awk '{print $2}' | sed 's/-[0-9]*$//')
           echo ""
           echo "Package version: $VERSION"
 
