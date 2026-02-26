@@ -9,6 +9,11 @@
 #include <linux/bitfield.h>
 #include <linux/bits.h>
 
+/* Compatibility shim for older kernels that don't have GENMASK_U64 */
+#ifndef GENMASK_U64
+#define GENMASK_U64(h, l) GENMASK_ULL(h, l)
+#endif
+
 #define AMDXDNA_ERR_DRV_AIE		4
 #define AMDXDNA_ERR_SEV_CRITICAL	3
 #define AMDXDNA_ERR_CLASS_AIE		2

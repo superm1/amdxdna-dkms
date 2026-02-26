@@ -64,10 +64,12 @@ DRIVER_SRC="drivers/accel/amdxdna"
 cp -v "$DRIVER_SRC"/*.c "$PROJECT_ROOT/src/amdxdna/"
 cp -v "$DRIVER_SRC"/*.h "$PROJECT_ROOT/src/amdxdna/"
 
-# Copy UAPI header
+# Copy UAPI header and fix include path
 echo ""
 echo ">>> Copying UAPI header..."
 cp -v include/uapi/drm/amdxdna_accel.h "$PROJECT_ROOT/src/include/uapi/drm/"
+# Fix the drm.h include to use angle brackets for system header
+sed -i 's|#include "drm.h"|#include <drm/drm.h>|' "$PROJECT_ROOT/src/include/uapi/drm/amdxdna_accel.h"
 
 # Copy tracepoint header
 echo ""
@@ -77,29 +79,30 @@ cp -v include/trace/events/amdxdna.h "$PROJECT_ROOT/src/trace/events/"
 # Generate DKMS Makefile from upstream Makefile
 echo ""
 echo ">>> Generating Makefile.dkms..."
-cat > "$PROJECT_ROOT/src/amdxdna/Makefile.dkms" << 'EOF'
+cat > "$PROJECT_ROOT/src/amdxdna/Makefile" << 'EOF'
 # SPDX-License-Identifier: GPL-2.0-only
 
-ccflags-y += -I$(src)/../include/uapi
-ccflags-y += -I$(src)/../trace
+# Prepend our include paths to ensure bundled headers override system ones
+# This is critical because 6.14 kernels may ship with older amdxdna_accel.h
+LINUXINCLUDE := -I$(src)/include/uapi -I$(src)/trace $(LINUXINCLUDE)
 
 EOF
 
 # Extract object file list from upstream Makefile
-grep -E '^\s+\w+\.o \\' "$DRIVER_SRC/Makefile" | sed 's/^//' >> "$PROJECT_ROOT/src/amdxdna/Makefile.dkms.tmp"
+grep -E '^\s+\w+\.o \\' "$DRIVER_SRC/Makefile" | sed 's/^//' >> "$PROJECT_ROOT/src/amdxdna/Makefile.tmp"
 # Get the last object file (without backslash)
-grep -E '^\s+\w+\.o$' "$DRIVER_SRC/Makefile" | sed 's/^//' >> "$PROJECT_ROOT/src/amdxdna/Makefile.dkms.tmp"
+grep -E '^\s+\w+\.o$' "$DRIVER_SRC/Makefile" | sed 's/^//' >> "$PROJECT_ROOT/src/amdxdna/Makefile.tmp"
 
 # Add the full amdxdna-y section
-echo "amdxdna-y := \\" >> "$PROJECT_ROOT/src/amdxdna/Makefile.dkms"
-cat "$PROJECT_ROOT/src/amdxdna/Makefile.dkms.tmp" >> "$PROJECT_ROOT/src/amdxdna/Makefile.dkms"
-rm "$PROJECT_ROOT/src/amdxdna/Makefile.dkms.tmp"
+echo "amdxdna-y := \\" >> "$PROJECT_ROOT/src/amdxdna/Makefile"
+cat "$PROJECT_ROOT/src/amdxdna/Makefile.tmp" >> "$PROJECT_ROOT/src/amdxdna/Makefile"
+rm "$PROJECT_ROOT/src/amdxdna/Makefile.tmp"
 
 # Add obj-m
-echo "" >> "$PROJECT_ROOT/src/amdxdna/Makefile.dkms"
-echo "obj-m := amdxdna.o" >> "$PROJECT_ROOT/src/amdxdna/Makefile.dkms"
+echo "" >> "$PROJECT_ROOT/src/amdxdna/Makefile"
+echo "obj-m := amdxdna.o" >> "$PROJECT_ROOT/src/amdxdna/Makefile"
 
-echo "Created Makefile.dkms"
+echo "Created Makefile"
 
 # Copy firmware
 echo ""

@@ -7,7 +7,7 @@
 #define _UAPI_AMDXDNA_ACCEL_H_
 
 #include <linux/stddef.h>
-#include "drm.h"
+#include <drm/drm.h>
 
 #if defined(__cplusplus)
 extern "C" {
