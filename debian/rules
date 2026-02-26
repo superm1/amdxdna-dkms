@@ -16,13 +16,8 @@ override_dh_auto_test:
 
 override_dh_auto_install:
 	# Substitute version in dkms.conf and install file
-	sed -e 's/__PACKAGE_VERSION__/$(DEB_VERSION_UPSTREAM)/' \
-	    src/amdxdna/dkms.conf > src/amdxdna/dkms.conf.subst
-	mv src/amdxdna/dkms.conf.subst src/amdxdna/dkms.conf
-
-	sed -e 's/__VERSION__/$(DEB_VERSION_UPSTREAM)/g' \
-	    debian/amdxdna-dkms.install > debian/amdxdna-dkms.install.subst
-	mv debian/amdxdna-dkms.install.subst debian/amdxdna-dkms.install
+	sed -i 's/__PACKAGE_VERSION__/$(DEB_VERSION_UPSTREAM)/' src/amdxdna/dkms.conf
+	sed -i 's/__VERSION__/$(DEB_VERSION_UPSTREAM)/g' debian/amdxdna-dkms.install
 
 	# Let dh_install handle file installation
 	dh_install
