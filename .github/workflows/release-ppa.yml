@@ -1,0 +1,67 @@
+name: Release to PPA
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  upload-ppa:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debhelper dkms devscripts dput-ng gnupg
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --import
+          gpg --list-secret-keys
+
+      - name: Build source package
+        env:
+          DEBFULLNAME: "Mario Limonciello"
+          DEBEMAIL: "superm1@gmail.com"
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+        run: |
+          # Build source package
+          dpkg-buildpackage -S -sa -k$GPG_KEY_ID
+
+      - name: Configure dput for PPA
+        env:
+          PPA_USER: ${{ secrets.PPA_USER }}
+        run: |
+          mkdir -p ~/.dput.d
+          cat > ~/.dput.d/profiles/amdxdna-ppa.json <<EOF
+          {
+            "amdxdna-ppa": {
+              "fqdn": "ppa.launchpad.net",
+              "incoming": "~${PPA_USER}/ubuntu/amdxdna/",
+              "method": "ftp",
+              "allow_unsigned_uploads": false
+            }
+          }
+          EOF
+
+      - name: Upload to PPA
+        run: |
+          # Upload the source package
+          dput amdxdna-ppa ../*.changes
+
+      - name: Upload source artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-package
+          path: |
+            ../*.dsc
+            ../*.tar.*
+            ../*.changes
+          retention-days: 90

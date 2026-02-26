@@ -1,0 +1,22 @@
+Source: amdxdna-dkms
+Section: kernel
+Priority: optional
+Maintainer: Mario Limonciello <superm1@gmail.com>
+Build-Depends: debhelper-compat (= 13), dkms
+Standards-Version: 4.6.0
+
+Package: amdxdna-dkms
+Architecture: amd64
+Depends: ${misc:Depends}, dkms (>= 2.1.0.0)
+Recommends: linux-headers-generic | linux-headers
+Description: DKMS source for AMD XDNA NPU driver
+ This package provides the AMD XDNA NPU (Neural Processing Unit) kernel
+ driver and firmware in DKMS format. The package supports kernels 6.14,
+ 6.17, and 6.18, specifically designed for Ubuntu 24.04 LTS kernel variants.
+ .
+ Supported devices:
+  - AMD Ryzen AI (Phoenix, Hawk Point): PCI ID 1502:00
+  - AMD Ryzen AI (Strix Point): PCI ID 17f0:10
+  - AMD Ryzen AI (Strix Halo): PCI ID 17f0:11
+ .
+ The module will be automatically built for each installed kernel via DKMS.

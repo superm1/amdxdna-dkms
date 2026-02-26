@@ -1,0 +1,10 @@
+GPL-2.0-only
+
+This package contains the AMD XDNA NPU driver and firmware.
+
+The driver source code is licensed under the GNU General Public License v2.0.
+The full text of the GPL-2.0 license can be found at:
+https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
+
+The firmware binaries are proprietary and licensed by AMD.
+See firmware/amdnpu/LICENSE.amdnpu for firmware licensing details.

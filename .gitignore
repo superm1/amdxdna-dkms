@@ -1,0 +1,51 @@
+# Upstream repository clones (used by update script)
+drm-kernel/
+linux-firmware/
+
+# Planning documents
+plan.md
+
+# Build artifacts
+*.deb
+*.ddeb
+*.build
+*.buildinfo
+*.changes
+*.dsc
+*.tar.gz
+*.tar.xz
+*.upload
+
+# Debian packaging artifacts
+debian/.debhelper/
+debian/amdxdna-dkms/
+debian/files
+debian/*.log
+debian/*.substvars
+debian/debhelper-build-stamp
+
+# DKMS build artifacts
+*.ko
+*.o
+*.mod
+*.mod.c
+*.cmd
+.tmp_versions/
+Module.symvers
+modules.order
+
+# Editor and IDE files
+*~
+*.swp
+*.swo
+.vscode/
+.idea/
+*.sublime-*
+
+# Temporary files
+/tmp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
