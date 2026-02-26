@@ -99,6 +99,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y dkms build-essential
+
+          # Install headers for the currently running kernel (needed for DKMS)
+          RUNNING_KERNEL=$(uname -r)
+          echo "Installing headers for running kernel: $RUNNING_KERNEL"
+          sudo apt-get install -y linux-headers-$RUNNING_KERNEL || echo "Could not install headers for running kernel"
+
+          # Install headers for the kernel we want to test
+          echo "Installing headers for test kernel: ${{ matrix.kernel.package }}"
           sudo apt-get install -y ${{ matrix.kernel.package }} || {
             echo "Warning: Could not install ${{ matrix.kernel.package }}"
             echo "Trying to find alternative ${{ matrix.kernel.version }} headers..."
