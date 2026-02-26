@@ -64,6 +64,11 @@ DRIVER_SRC="drivers/accel/amdxdna"
 cp -v "$DRIVER_SRC"/*.c "$PROJECT_ROOT/src/amdxdna/"
 cp -v "$DRIVER_SRC"/*.h "$PROJECT_ROOT/src/amdxdna/"
 
+# Copy our compatibility header (not from upstream)
+echo ""
+echo ">>> Installing compatibility header..."
+cp -v "$PROJECT_ROOT/compat/amdxdna_compat.h" "$PROJECT_ROOT/src/amdxdna/"
+
 # Copy UAPI header and fix include path
 echo ""
 echo ">>> Copying UAPI header..."
@@ -75,6 +80,26 @@ sed -i 's|#include "drm.h"|#include <drm/drm.h>|' "$PROJECT_ROOT/src/include/uap
 echo ""
 echo ">>> Copying tracepoint header..."
 cp -v include/trace/events/amdxdna.h "$PROJECT_ROOT/src/trace/events/"
+
+# Apply compatibility patches
+echo ""
+echo ">>> Applying compatibility patches..."
+
+# Add GENMASK_U64 compatibility to amdxdna_error.h
+sed -i '/^#include <linux\/bits.h>/a\\n/* Compatibility shim for older kernels that don'\''t have GENMASK_U64 */\n#ifndef GENMASK_U64\n#define GENMASK_U64(h, l) GENMASK_ULL(h, l)\n#endif' "$PROJECT_ROOT/src/amdxdna/amdxdna_error.h"
+
+# Add compat header include to source files that need it
+# These files use kzalloc_obj, kzalloc_flex, etc.
+for file in aie2_ctx.c aie2_error.c aie2_pci.c aie2_solver.c \
+            amdxdna_ctx.c amdxdna_gem.c amdxdna_mailbox.c \
+            amdxdna_pci_drv.c amdxdna_ubuf.c \
+            npu1_regs.c npu4_regs.c npu5_regs.c npu6_regs.c; do
+  # Find the first local include line and add compat header before it
+  if [ -f "$PROJECT_ROOT/src/amdxdna/$file" ]; then
+    sed -i '0,/^#include "/{s|^#include "|#include "amdxdna_compat.h"\n#include "|;}' "$PROJECT_ROOT/src/amdxdna/$file"
+    echo "  Added compat header to $file"
+  fi
+done
 
 # Generate DKMS Makefile from upstream Makefile
 echo ""
