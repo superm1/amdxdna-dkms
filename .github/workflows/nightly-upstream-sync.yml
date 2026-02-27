@@ -56,12 +56,12 @@ jobs:
 
           echo "✓ Upstream repositories cloned"
 
-      - name: Detect upstream updates
-        id: detect
+      - name: Store upstream commit metadata
+        id: upstream
         run: |
           set -e
 
-          echo "=== Checking for upstream updates ==="
+          echo "=== Storing upstream metadata ==="
 
           CURRENT_VERSION=$(dpkg-parsechangelog -S Version)
           echo "Current package version: $CURRENT_VERSION"
@@ -70,16 +70,13 @@ jobs:
           CURRENT_KERNEL_COMMIT=$(echo "$CURRENT_VERSION" | sed -n 's/.*+git[0-9]*\.\([a-f0-9]*\)-.*/\1/p')
 
           if [ -z "$CURRENT_KERNEL_COMMIT" ]; then
-            echo "⚠ Could not extract kernel commit from changelog version"
-            echo "Version format may be unexpected: $CURRENT_VERSION"
             CURRENT_KERNEL_COMMIT="unknown"
-          else
-            echo "Current kernel commit (from changelog): $CURRENT_KERNEL_COMMIT"
           fi
+          echo "Current kernel commit (from changelog): $CURRENT_KERNEL_COMMIT"
 
           cd drm-kernel
-          UPSTREAM_KERNEL_COMMIT=$(git rev-parse --short HEAD)
           UPSTREAM_KERNEL_COMMIT_FULL=$(git rev-parse HEAD)
+          UPSTREAM_KERNEL_COMMIT=$(git rev-parse --short HEAD)
           echo "Upstream kernel commit: $UPSTREAM_KERNEL_COMMIT"
           cd ..
 
@@ -97,33 +94,7 @@ jobs:
           echo "new_firmware_commit=$UPSTREAM_FIRMWARE_COMMIT" >> $GITHUB_OUTPUT
           cd ..
 
-          HAS_UPDATES="false"
-
-          if [ "$CURRENT_KERNEL_COMMIT" != "$UPSTREAM_KERNEL_COMMIT" ]; then
-            echo "✓ Kernel has updates: $CURRENT_KERNEL_COMMIT -> $UPSTREAM_KERNEL_COMMIT"
-            HAS_UPDATES="true"
-          else
-            echo "✗ Kernel is up to date at $CURRENT_KERNEL_COMMIT"
-          fi
-
-          if [ "${{ github.event.inputs.force_update }}" = "true" ]; then
-            echo "⚠ Force update requested"
-            HAS_UPDATES="true"
-          fi
-
-          echo "has_updates=$HAS_UPDATES" >> $GITHUB_OUTPUT
-          echo ""
-          echo "=== Update detection complete ==="
-          echo "Has updates: $HAS_UPDATES"
-
-      - name: Early exit if no updates
-        if: steps.detect.outputs.has_updates != 'true'
-        run: |
-          echo "✓ No upstream updates found. Exiting gracefully."
-          echo "Run workflow manually with force_update=true to force a sync."
-
       - name: Run update script
-        if: steps.detect.outputs.has_updates == 'true'
         id: update
         run: |
           set -e
@@ -134,7 +105,6 @@ jobs:
           echo "✓ Update script completed successfully"
 
       - name: Add firmware tracking to changelog
-        if: steps.detect.outputs.has_updates == 'true'
         run: |
           set -e
 
@@ -147,6 +117,36 @@ jobs:
           dch --append "Firmware commit: $FIRMWARE_COMMIT"
 
           echo "✓ Firmware commit added to changelog"
+
+      - name: Detect if there are actual changes
+        id: detect
+        run: |
+          set -e
+
+          echo "=== Checking for file changes ==="
+
+          if git diff --quiet; then
+            echo "✗ No file changes detected"
+            HAS_UPDATES="false"
+          else
+            echo "✓ File changes detected:"
+            git diff --name-only
+            HAS_UPDATES="true"
+          fi
+
+          if [ "${{ github.event.inputs.force_update }}" = "true" ]; then
+            echo "⚠ Force update requested"
+            HAS_UPDATES="true"
+          fi
+
+          echo "has_updates=$HAS_UPDATES" >> $GITHUB_OUTPUT
+          echo "Has updates: $HAS_UPDATES"
+
+      - name: Early exit if no updates
+        if: steps.detect.outputs.has_updates != 'true'
+        run: |
+          echo "✓ No file changes after sync. Exiting gracefully."
+          echo "Run workflow manually with force_update=true to force a PR."
 
       - name: Verify changes
         if: steps.detect.outputs.has_updates == 'true'
@@ -215,10 +215,10 @@ jobs:
           KERNEL_COMMIT="${{ steps.metadata.outputs.kernel_commit }}"
           PKG_VERSION="${{ steps.metadata.outputs.package_version }}"
 
-          OLD_KERNEL="${{ steps.detect.outputs.old_kernel_commit }}"
-          NEW_KERNEL="${{ steps.detect.outputs.new_kernel_commit }}"
-          OLD_FIRMWARE="${{ steps.detect.outputs.old_firmware_commit }}"
-          NEW_FIRMWARE="${{ steps.detect.outputs.new_firmware_commit }}"
+          OLD_KERNEL="${{ steps.upstream.outputs.old_kernel_commit }}"
+          NEW_KERNEL="${{ steps.upstream.outputs.new_kernel_commit }}"
+          OLD_FIRMWARE="${{ steps.upstream.outputs.old_firmware_commit }}"
+          NEW_FIRMWARE="${{ steps.upstream.outputs.new_firmware_commit }}"
 
           COMMIT_MSG=$(cat <<EOF
           Automated upstream sync: Update to kernel $KERNEL_VERSION ($KERNEL_COMMIT)
@@ -250,10 +250,10 @@ jobs:
           PKG_VERSION="${{ steps.metadata.outputs.package_version }}"
           BRANCH_NAME="${{ steps.commit.outputs.branch_name }}"
 
-          OLD_KERNEL="${{ steps.detect.outputs.old_kernel_commit }}"
-          NEW_KERNEL="${{ steps.detect.outputs.new_kernel_commit }}"
-          OLD_FIRMWARE="${{ steps.detect.outputs.old_firmware_commit }}"
-          NEW_FIRMWARE="${{ steps.detect.outputs.new_firmware_commit }}"
+          OLD_KERNEL="${{ steps.upstream.outputs.old_kernel_commit }}"
+          NEW_KERNEL="${{ steps.upstream.outputs.new_kernel_commit }}"
+          OLD_FIRMWARE="${{ steps.upstream.outputs.old_firmware_commit }}"
+          NEW_FIRMWARE="${{ steps.upstream.outputs.new_firmware_commit }}"
 
           # Truncate commit hashes for display
           OLD_KERNEL_SHORT="${OLD_KERNEL:0:7}"
