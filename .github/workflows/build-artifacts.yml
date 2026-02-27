@@ -253,7 +253,7 @@ jobs:
       - name: Sign source package
         run: |
           echo "Signing package with GPG key $GPG_KEY_ID..."
-          debsign -k $GPG_KEY_ID amdxdna-dkms_*${{ matrix.ubuntu_release }}${{ matrix.build }}.dsc_source.changes
+          debsign -k $GPG_KEY_ID amdxdna-dkms_*${{ matrix.ubuntu_release }}${{ matrix.build }}_source.changes
 
       - name: Upload to PPA
         run: |
