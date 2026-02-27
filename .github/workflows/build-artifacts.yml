@@ -202,7 +202,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y devscripts debhelper dch debsign dput dh-dkms dkms
+          sudo apt-get install -y devscripts debhelper dh-dkms dkms
 
       - name: Extract source package
         run: |
