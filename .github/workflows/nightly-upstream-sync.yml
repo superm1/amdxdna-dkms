@@ -2,7 +2,6 @@ name: Nightly Upstream Sync
 
 on:
   schedule:
-    # Run at 2 AM UTC daily
     - cron: '0 2 * * *'
   workflow_dispatch:
     inputs:
@@ -12,9 +11,8 @@ on:
         default: false
 
 permissions:
-  contents: write       # Push branches
-  pull-requests: write  # Create PRs and add labels
-  issues: write         # Create issues on failure
+  contents: write
+  pull-requests: write
 
 env:
   DEBFULLNAME: "GitHub Actions Bot"
@@ -50,12 +48,11 @@ jobs:
           FIRMWARE_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git"
           FIRMWARE_BRANCH="main"
 
-          # Always clone fresh (CI has no persistent storage)
-          echo "Cloning drm-kernel..."
-          git clone --branch $KERNEL_BRANCH $KERNEL_REPO drm-kernel
+          echo "Cloning drm-kernel (shallow)..."
+          git clone --depth 1 --branch $KERNEL_BRANCH $KERNEL_REPO drm-kernel
 
-          echo "Cloning linux-firmware..."
-          git clone --branch $FIRMWARE_BRANCH $FIRMWARE_REPO linux-firmware
+          echo "Cloning linux-firmware (shallow)..."
+          git clone --depth 1 --branch $FIRMWARE_BRANCH $FIRMWARE_REPO linux-firmware
 
           echo "✓ Upstream repositories cloned"
 
@@ -66,44 +63,40 @@ jobs:
 
           echo "=== Checking for upstream updates ==="
 
-          # Get current kernel commit from debian/changelog
-          # Format is: KERNEL_VERSION+gitDATE.COMMIT-1
           CURRENT_VERSION=$(dpkg-parsechangelog -S Version)
           echo "Current package version: $CURRENT_VERSION"
 
-          # Extract the git commit hash from the version string
-          # Example: 7.0.0-rc1+git20260226.36d9579fe-1 -> 36d9579fe
+          # Extract commit from version: 7.0.0-rc1+git20260226.36d9579fe-1 -> 36d9579fe
           CURRENT_KERNEL_COMMIT=$(echo "$CURRENT_VERSION" | sed -n 's/.*+git[0-9]*\.\([a-f0-9]*\)-.*/\1/p')
 
           if [ -z "$CURRENT_KERNEL_COMMIT" ]; then
             echo "⚠ Could not extract kernel commit from changelog version"
             echo "Version format may be unexpected: $CURRENT_VERSION"
-            # Treat as needing update to be safe
             CURRENT_KERNEL_COMMIT="unknown"
           else
             echo "Current kernel commit (from changelog): $CURRENT_KERNEL_COMMIT"
           fi
 
-          # Get upstream kernel commit
           cd drm-kernel
           UPSTREAM_KERNEL_COMMIT=$(git rev-parse --short HEAD)
           UPSTREAM_KERNEL_COMMIT_FULL=$(git rev-parse HEAD)
           echo "Upstream kernel commit: $UPSTREAM_KERNEL_COMMIT"
           cd ..
 
-          # Store commits for later use
           echo "old_kernel_commit=$CURRENT_KERNEL_COMMIT" >> $GITHUB_OUTPUT
           echo "new_kernel_commit=$UPSTREAM_KERNEL_COMMIT_FULL" >> $GITHUB_OUTPUT
 
-          # Get firmware commits (we don't track this in changelog, so always note it)
+          CURRENT_FIRMWARE_COMMIT=$(dpkg-parsechangelog -S Changes | grep -oP 'Firmware commit: \K[a-f0-9]+' | head -1 || echo "unknown")
+          echo "Current firmware commit (from changelog): $CURRENT_FIRMWARE_COMMIT"
+
           cd linux-firmware
           UPSTREAM_FIRMWARE_COMMIT=$(git rev-parse HEAD)
-          echo "Upstream firmware commit: ${UPSTREAM_FIRMWARE_COMMIT:0:7}"
-          echo "old_firmware_commit=unknown" >> $GITHUB_OUTPUT
+          UPSTREAM_FIRMWARE_COMMIT_SHORT=$(git rev-parse --short HEAD)
+          echo "Upstream firmware commit: $UPSTREAM_FIRMWARE_COMMIT_SHORT"
+          echo "old_firmware_commit=$CURRENT_FIRMWARE_COMMIT" >> $GITHUB_OUTPUT
           echo "new_firmware_commit=$UPSTREAM_FIRMWARE_COMMIT" >> $GITHUB_OUTPUT
           cd ..
 
-          # Check if update is needed
           HAS_UPDATES="false"
 
           if [ "$CURRENT_KERNEL_COMMIT" != "$UPSTREAM_KERNEL_COMMIT" ]; then
@@ -113,7 +106,6 @@ jobs:
             echo "✗ Kernel is up to date at $CURRENT_KERNEL_COMMIT"
           fi
 
-          # Check force_update flag
           if [ "${{ github.event.inputs.force_update }}" = "true" ]; then
             echo "⚠ Force update requested"
             HAS_UPDATES="true"
@@ -141,6 +133,21 @@ jobs:
 
           echo "✓ Update script completed successfully"
 
+      - name: Add firmware tracking to changelog
+        if: steps.detect.outputs.has_updates == 'true'
+        run: |
+          set -e
+
+          echo "=== Adding firmware tracking to changelog ==="
+
+          cd linux-firmware
+          FIRMWARE_COMMIT=$(git rev-parse --short HEAD)
+          cd ..
+
+          dch --append "Firmware commit: $FIRMWARE_COMMIT"
+
+          echo "✓ Firmware commit added to changelog"
+
       - name: Verify changes
         if: steps.detect.outputs.has_updates == 'true'
         run: |
@@ -148,7 +155,6 @@ jobs:
 
           echo "=== Verifying changes ==="
 
-          # Check that debian/changelog was modified
           if git diff --name-only | grep -q "debian/changelog"; then
             echo "✓ debian/changelog was updated"
           else
@@ -156,7 +162,6 @@ jobs:
             exit 1
           fi
 
-          # Check that src/ directory has changes
           if git diff --name-only | grep -q "^src/"; then
             echo "✓ src/ directory was updated"
           else
@@ -173,11 +178,9 @@ jobs:
         run: |
           set -e
 
-          # Get package version
           PKG_VERSION=$(dpkg-parsechangelog -S Version)
           echo "package_version=$PKG_VERSION" >> $GITHUB_OUTPUT
 
-          # Get kernel version and commit
           cd drm-kernel
           KERNEL_VERSION=$(make -s kernelversion 2>/dev/null || echo "unknown")
           KERNEL_COMMIT=$(git rev-parse --short HEAD)
@@ -195,26 +198,19 @@ jobs:
         run: |
           set -e
 
-          # Create branch name with date
           BRANCH_NAME="automated-upstream-sync-$(date +%Y%m%d)"
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
-          # Check if branch already exists remotely
           if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
             echo "⚠ Branch $BRANCH_NAME already exists remotely"
-            # Use timestamp to make it unique
             BRANCH_NAME="automated-upstream-sync-$(date +%Y%m%d-%H%M%S)"
             echo "Using unique branch name: $BRANCH_NAME"
             echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           fi
 
-          # Create and checkout branch
           git checkout -b "$BRANCH_NAME"
-
-          # Stage all changes
+          rm -f update.log
           git add -A
-
-          # Create commit message
           KERNEL_VERSION="${{ steps.metadata.outputs.kernel_version }}"
           KERNEL_COMMIT="${{ steps.metadata.outputs.kernel_commit }}"
           PKG_VERSION="${{ steps.metadata.outputs.package_version }}"
@@ -224,7 +220,6 @@ jobs:
           OLD_FIRMWARE="${{ steps.detect.outputs.old_firmware_commit }}"
           NEW_FIRMWARE="${{ steps.detect.outputs.new_firmware_commit }}"
 
-          # Build commit message
           COMMIT_MSG=$(cat <<EOF
           Automated upstream sync: Update to kernel $KERNEL_VERSION ($KERNEL_COMMIT)
 
@@ -239,8 +234,6 @@ jobs:
           )
 
           git commit -m "$COMMIT_MSG"
-
-          # Push branch
           git push -u origin "$BRANCH_NAME"
 
           echo "✓ Changes committed and pushed to $BRANCH_NAME"
@@ -262,7 +255,6 @@ jobs:
           OLD_FIRMWARE="${{ steps.detect.outputs.old_firmware_commit }}"
           NEW_FIRMWARE="${{ steps.detect.outputs.new_firmware_commit }}"
 
-          # Create PR body
           PR_BODY=$(cat <<'EOF'
           ## Summary
 
@@ -293,58 +285,12 @@ jobs:
           EOF
           )
 
-          # Substitute variables in PR body
           PR_BODY=$(echo "$PR_BODY" | envsubst)
 
-          # Create PR
           gh pr create \
             --title "Automated upstream sync: Update to kernel $KERNEL_VERSION ($KERNEL_COMMIT)" \
             --body "$PR_BODY" \
             --base main \
-            --head "$BRANCH_NAME" \
-            --label "automated,upstream-sync"
+            --head "$BRANCH_NAME"
 
           echo "✓ Pull Request created successfully"
-
-      - name: Create failure issue
-        if: failure() && steps.detect.outputs.has_updates == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          DATE=$(date +%Y-%m-%d)
-
-          ISSUE_BODY=$(cat <<EOF
-          ## Nightly upstream sync failed
-
-          The automated upstream sync workflow failed on $DATE.
-
-          **Workflow run**: $WORKFLOW_URL
-
-          ### Action items
-
-          - [ ] Review workflow logs for errors
-          - [ ] Check if upstream repositories have breaking changes
-          - [ ] Verify update script is working correctly
-          - [ ] Check if manual intervention is needed
-          - [ ] Update workflow if necessary
-
-          ### Common causes
-
-          - Compatibility patch failures
-          - New files in upstream that aren't handled
-          - Makefile generation issues
-          - Changelog update problems
-
-          ---
-
-          🤖 This issue was automatically created by the nightly upstream sync workflow.
-          EOF
-          )
-
-          gh issue create \
-            --title "Nightly upstream sync failed on $DATE" \
-            --body "$ISSUE_BODY" \
-            --label "automation-failure,upstream-sync"
-
-          echo "✗ Failure issue created"
