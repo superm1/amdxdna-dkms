@@ -1,0 +1,360 @@
+name: Nightly Upstream Sync
+
+on:
+  schedule:
+    # Run at 2 AM UTC daily
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Force update even if no changes detected'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write       # Push branches
+  pull-requests: write  # Create PRs and add labels
+  issues: write         # Create issues on failure
+
+env:
+  DEBFULLNAME: "GitHub Actions Bot"
+  DEBEMAIL: "41898282+github-actions[bot]@users.noreply.github.com"
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git devscripts debhelper dh-dkms dkms
+
+      - name: Configure git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Detect upstream updates
+        id: detect
+        run: |
+          set -e
+
+          echo "=== Checking for upstream updates ==="
+
+          HAS_UPDATES="false"
+
+          # Check drm-kernel updates
+          if [ -d "drm-kernel" ]; then
+            cd drm-kernel
+            echo "Fetching from drm-misc-fixes..."
+            git fetch origin drm-misc-fixes
+
+            OLD_KERNEL_COMMIT=$(git rev-parse HEAD)
+            NEW_KERNEL_COMMIT=$(git rev-parse origin/drm-misc-fixes)
+
+            echo "drm-kernel: $OLD_KERNEL_COMMIT -> $NEW_KERNEL_COMMIT"
+            echo "old_kernel_commit=$OLD_KERNEL_COMMIT" >> $GITHUB_OUTPUT
+            echo "new_kernel_commit=$NEW_KERNEL_COMMIT" >> $GITHUB_OUTPUT
+
+            if [ "$OLD_KERNEL_COMMIT" != "$NEW_KERNEL_COMMIT" ]; then
+              echo "✓ drm-kernel has updates"
+              HAS_UPDATES="true"
+            else
+              echo "✗ drm-kernel is up to date"
+            fi
+
+            cd ..
+          else
+            echo "⚠ drm-kernel directory not found - will be cloned by update script"
+            HAS_UPDATES="true"
+          fi
+
+          # Check linux-firmware updates
+          if [ -d "linux-firmware" ]; then
+            cd linux-firmware
+            echo "Fetching from linux-firmware main..."
+            git fetch origin main
+
+            OLD_FIRMWARE_COMMIT=$(git rev-parse HEAD)
+            NEW_FIRMWARE_COMMIT=$(git rev-parse origin/main)
+
+            echo "linux-firmware: $OLD_FIRMWARE_COMMIT -> $NEW_FIRMWARE_COMMIT"
+            echo "old_firmware_commit=$OLD_FIRMWARE_COMMIT" >> $GITHUB_OUTPUT
+            echo "new_firmware_commit=$NEW_FIRMWARE_COMMIT" >> $GITHUB_OUTPUT
+
+            if [ "$OLD_FIRMWARE_COMMIT" != "$NEW_FIRMWARE_COMMIT" ]; then
+              echo "✓ linux-firmware has updates"
+              HAS_UPDATES="true"
+            else
+              echo "✗ linux-firmware is up to date"
+            fi
+
+            cd ..
+          else
+            echo "⚠ linux-firmware directory not found - will be cloned by update script"
+            HAS_UPDATES="true"
+          fi
+
+          # Check force_update flag
+          if [ "${{ github.event.inputs.force_update }}" = "true" ]; then
+            echo "⚠ Force update requested"
+            HAS_UPDATES="true"
+          fi
+
+          echo "has_updates=$HAS_UPDATES" >> $GITHUB_OUTPUT
+          echo ""
+          echo "=== Update detection complete ==="
+          echo "Has updates: $HAS_UPDATES"
+
+      - name: Early exit if no updates
+        if: steps.detect.outputs.has_updates != 'true'
+        run: |
+          echo "✓ No upstream updates found. Exiting gracefully."
+          echo "Run workflow manually with force_update=true to force a sync."
+
+      - name: Pull upstream changes
+        if: steps.detect.outputs.has_updates == 'true'
+        run: |
+          set -e
+
+          echo "=== Pulling upstream changes ==="
+
+          if [ -d "drm-kernel" ]; then
+            cd drm-kernel
+            echo "Pulling drm-misc-fixes..."
+            git pull origin drm-misc-fixes
+            cd ..
+          fi
+
+          if [ -d "linux-firmware" ]; then
+            cd linux-firmware
+            echo "Pulling linux-firmware main..."
+            git pull origin main
+            cd ..
+          fi
+
+          echo "✓ Upstream changes pulled"
+
+      - name: Run update script
+        if: steps.detect.outputs.has_updates == 'true'
+        id: update
+        run: |
+          set -e
+
+          echo "=== Running update-from-upstream.sh ==="
+          ./scripts/update-from-upstream.sh 2>&1 | tee update.log
+
+          echo "✓ Update script completed successfully"
+
+      - name: Verify changes
+        if: steps.detect.outputs.has_updates == 'true'
+        run: |
+          set -e
+
+          echo "=== Verifying changes ==="
+
+          # Check that debian/changelog was modified
+          if git diff --name-only | grep -q "debian/changelog"; then
+            echo "✓ debian/changelog was updated"
+          else
+            echo "✗ debian/changelog was not updated - script may have failed"
+            exit 1
+          fi
+
+          # Check that src/ directory has changes
+          if git diff --name-only | grep -q "^src/"; then
+            echo "✓ src/ directory was updated"
+          else
+            echo "⚠ src/ directory was not updated - checking if this is expected..."
+          fi
+
+          echo ""
+          echo "=== Changed files ==="
+          git status --short
+
+      - name: Extract version metadata
+        if: steps.detect.outputs.has_updates == 'true'
+        id: metadata
+        run: |
+          set -e
+
+          # Get package version
+          PKG_VERSION=$(dpkg-parsechangelog -S Version)
+          echo "package_version=$PKG_VERSION" >> $GITHUB_OUTPUT
+
+          # Get kernel version and commit
+          cd drm-kernel
+          KERNEL_VERSION=$(make -s kernelversion 2>/dev/null || echo "unknown")
+          KERNEL_COMMIT=$(git rev-parse --short HEAD)
+          echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+          echo "kernel_commit=$KERNEL_COMMIT" >> $GITHUB_OUTPUT
+          cd ..
+
+          echo "Package version: $PKG_VERSION"
+          echo "Kernel version: $KERNEL_VERSION"
+          echo "Kernel commit: $KERNEL_COMMIT"
+
+      - name: Create feature branch and commit
+        if: steps.detect.outputs.has_updates == 'true'
+        id: commit
+        run: |
+          set -e
+
+          # Create branch name with date
+          BRANCH_NAME="automated-upstream-sync-$(date +%Y%m%d)"
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+          # Check if branch already exists remotely
+          if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+            echo "⚠ Branch $BRANCH_NAME already exists remotely"
+            # Use timestamp to make it unique
+            BRANCH_NAME="automated-upstream-sync-$(date +%Y%m%d-%H%M%S)"
+            echo "Using unique branch name: $BRANCH_NAME"
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          fi
+
+          # Create and checkout branch
+          git checkout -b "$BRANCH_NAME"
+
+          # Stage all changes
+          git add -A
+
+          # Create commit message
+          KERNEL_VERSION="${{ steps.metadata.outputs.kernel_version }}"
+          KERNEL_COMMIT="${{ steps.metadata.outputs.kernel_commit }}"
+          PKG_VERSION="${{ steps.metadata.outputs.package_version }}"
+
+          OLD_KERNEL="${{ steps.detect.outputs.old_kernel_commit }}"
+          NEW_KERNEL="${{ steps.detect.outputs.new_kernel_commit }}"
+          OLD_FIRMWARE="${{ steps.detect.outputs.old_firmware_commit }}"
+          NEW_FIRMWARE="${{ steps.detect.outputs.new_firmware_commit }}"
+
+          # Build commit message
+          COMMIT_MSG=$(cat <<EOF
+          Automated upstream sync: Update to kernel $KERNEL_VERSION ($KERNEL_COMMIT)
+
+          Updates:
+          - drm-misc-fixes: ${OLD_KERNEL:0:7} -> ${NEW_KERNEL:0:7}
+          - linux-firmware: ${OLD_FIRMWARE:0:7} -> ${NEW_FIRMWARE:0:7}
+
+          Package version: $PKG_VERSION
+
+          Co-Authored-By: GitHub Actions Bot <actions@github.com>
+          EOF
+          )
+
+          git commit -m "$COMMIT_MSG"
+
+          # Push branch
+          git push -u origin "$BRANCH_NAME"
+
+          echo "✓ Changes committed and pushed to $BRANCH_NAME"
+
+      - name: Create Pull Request
+        if: steps.detect.outputs.has_updates == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+
+          KERNEL_VERSION="${{ steps.metadata.outputs.kernel_version }}"
+          KERNEL_COMMIT="${{ steps.metadata.outputs.kernel_commit }}"
+          PKG_VERSION="${{ steps.metadata.outputs.package_version }}"
+          BRANCH_NAME="${{ steps.commit.outputs.branch_name }}"
+
+          OLD_KERNEL="${{ steps.detect.outputs.old_kernel_commit }}"
+          NEW_KERNEL="${{ steps.detect.outputs.new_kernel_commit }}"
+          OLD_FIRMWARE="${{ steps.detect.outputs.old_firmware_commit }}"
+          NEW_FIRMWARE="${{ steps.detect.outputs.new_firmware_commit }}"
+
+          # Create PR body
+          PR_BODY=$(cat <<'EOF'
+          ## Summary
+
+          This PR contains automated upstream synchronization from:
+          - **drm-misc-fixes**: Kernel driver sources
+          - **linux-firmware**: NPU firmware files
+
+          ### Changes
+
+          - **Kernel version**: $KERNEL_VERSION (commit [$KERNEL_COMMIT](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$KERNEL_COMMIT))
+          - **Package version**: $PKG_VERSION
+          - **drm-misc-fixes**: [`${OLD_KERNEL:0:7}`](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$OLD_KERNEL) → [`${NEW_KERNEL:0:7}`](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$NEW_KERNEL)
+          - **linux-firmware**: [`${OLD_FIRMWARE:0:7}`](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/commit/?id=$OLD_FIRMWARE) → [`${NEW_FIRMWARE:0:7}`](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/commit/?id=$NEW_FIRMWARE)
+
+          ## Test plan
+
+          - [ ] Verify CI passes (DKMS builds on OEM 6.17 and HWE 6.17)
+          - [ ] Review driver source changes
+          - [ ] Review firmware changes
+          - [ ] Check for any compatibility issues
+          - [ ] Test on hardware (if available)
+
+          ---
+
+          🤖 This PR was automatically created by the [nightly upstream sync workflow](https://github.com/${{ github.repository }}/actions/workflows/nightly-upstream-sync.yml).
+
+          Generated with [Claude Code](https://claude.com/claude-code)
+          EOF
+          )
+
+          # Substitute variables in PR body
+          PR_BODY=$(echo "$PR_BODY" | envsubst)
+
+          # Create PR
+          gh pr create \
+            --title "Automated upstream sync: Update to kernel $KERNEL_VERSION ($KERNEL_COMMIT)" \
+            --body "$PR_BODY" \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --label "automated,upstream-sync"
+
+          echo "✓ Pull Request created successfully"
+
+      - name: Create failure issue
+        if: failure() && steps.detect.outputs.has_updates == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          WORKFLOW_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          DATE=$(date +%Y-%m-%d)
+
+          ISSUE_BODY=$(cat <<EOF
+          ## Nightly upstream sync failed
+
+          The automated upstream sync workflow failed on $DATE.
+
+          **Workflow run**: $WORKFLOW_URL
+
+          ### Action items
+
+          - [ ] Review workflow logs for errors
+          - [ ] Check if upstream repositories have breaking changes
+          - [ ] Verify update script is working correctly
+          - [ ] Check if manual intervention is needed
+          - [ ] Update workflow if necessary
+
+          ### Common causes
+
+          - Compatibility patch failures
+          - New files in upstream that aren't handled
+          - Makefile generation issues
+          - Changelog update problems
+
+          ---
+
+          🤖 This issue was automatically created by the nightly upstream sync workflow.
+          EOF
+          )
+
+          gh issue create \
+            --title "Nightly upstream sync failed on $DATE" \
+            --body "$ISSUE_BODY" \
+            --label "automation-failure,upstream-sync"
+
+          echo "✗ Failure issue created"
