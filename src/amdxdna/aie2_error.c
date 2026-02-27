@@ -11,7 +11,6 @@
 #include <linux/kthread.h>
 #include <linux/kernel.h>
 
-#include "amdxdna_compat.h"
 #include "aie2_msg_priv.h"
 #include "aie2_pci.h"
 #include "amdxdna_error.h"

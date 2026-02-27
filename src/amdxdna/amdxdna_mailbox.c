@@ -14,7 +14,6 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/amdxdna.h>
 
-#include "amdxdna_compat.h"
 #include "amdxdna_mailbox.h"
 
 #define MB_ERR(chann, fmt, args...) \

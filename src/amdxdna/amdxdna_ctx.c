@@ -14,7 +14,6 @@
 #include <linux/xarray.h>
 #include <trace/events/amdxdna.h>
 
-#include "amdxdna_compat.h"
 #include "amdxdna_ctx.h"
 #include "amdxdna_gem.h"
 #include "amdxdna_pci_drv.h"

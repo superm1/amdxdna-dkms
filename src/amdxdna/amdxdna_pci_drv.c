@@ -14,7 +14,6 @@
 #include <linux/iommu.h>
 #include <linux/pci.h>
 
-#include "amdxdna_compat.h"
 #include "amdxdna_ctx.h"
 #include "amdxdna_gem.h"
 #include "amdxdna_pci_drv.h"
