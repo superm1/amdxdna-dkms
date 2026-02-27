@@ -78,8 +78,6 @@ jobs:
       fail-fast: false
       matrix:
         kernel:
-          - name: "OEM 6.14"
-            package: "linux-headers-oem-24.04c"
           - name: "OEM 6.17"
             package: "linux-headers-oem-24.04d"
           - name: "HWE 6.17"
