@@ -80,7 +80,7 @@ jobs:
         kernel:
           - name: "OEM 6.17"
             package: "linux-headers-oem-24.04d"
-          - name: "HWE 6.17"
+          - name: "HWE"
             package: "linux-headers-generic-hwe-24.04"
 
     name: Test on ${{ matrix.kernel.name }}
@@ -94,11 +94,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y dkms build-essential
-
-          # Install headers for the currently running kernel (needed for DKMS)
-          RUNNING_KERNEL=$(uname -r)
-          echo "Installing headers for running kernel: $RUNNING_KERNEL"
-          sudo apt-get install -y linux-headers-$RUNNING_KERNEL || echo "Could not install headers for running kernel"
 
           # Install headers for the kernel we want to test
           sudo apt-get install -y ${{ matrix.kernel.package }}
@@ -115,6 +110,13 @@ jobs:
             sudo apt-get install -f -y
             sudo dpkg -i *.deb
           }
+
+          # Extract version and trigger DKMS build for the target kernel
+          VERSION=$(dpkg -I *.deb | grep '^ Version:' | awk '{print $2}' | sed 's/-[0-9]*$//')
+          TARGET_KERNEL=$(ls /lib/modules/ | grep -v $(uname -r) | head -1)
+          echo "Triggering DKMS build for kernel: $TARGET_KERNEL"
+          sudo dkms build amdxdna/$VERSION -k $TARGET_KERNEL || true
+          sudo dkms install amdxdna/$VERSION -k $TARGET_KERNEL || true
 
       - name: Verify DKMS build
         run: |
