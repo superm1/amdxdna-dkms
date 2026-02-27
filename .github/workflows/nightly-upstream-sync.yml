@@ -123,14 +123,17 @@ jobs:
         run: |
           set -e
 
-          echo "=== Checking for file changes ==="
+          echo "=== Checking for driver/firmware changes ==="
 
-          if git diff --quiet; then
-            echo "✗ No file changes detected"
+          # Check if src/ or firmware/ directories have changes
+          # Ignore changelog-only updates
+          if git diff --quiet src/ firmware/ 2>/dev/null; then
+            echo "✗ No driver or firmware changes detected"
+            echo "Changes were only in changelog/metadata"
             HAS_UPDATES="false"
           else
-            echo "✓ File changes detected:"
-            git diff --name-only
+            echo "✓ Driver or firmware changes detected:"
+            git diff --name-only src/ firmware/ 2>/dev/null || true
             HAS_UPDATES="true"
           fi
 
