@@ -191,64 +191,70 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
-        ubuntu:
-          - name: "Ubuntu 24.04 LTS"
-            codename: "noble"
-          - name: "Ubuntu 25.10"
-            codename: "questing"
-    name: Upload to PPA for ${{ matrix.ubuntu.name }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        ubuntu_release: [noble, questing]
 
+    name: Upload to PPA for ${{ matrix.ubuntu_release }}
+    steps:
       - name: Download source package
         uses: actions/download-artifact@v4
         with:
           name: source-package
-
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y devscripts dput-ng gnupg
+          sudo apt-get install -y devscripts debhelper dch debsign dput dh-dkms dkms
 
-      - name: Import GPG key
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      - name: Extract source package
         run: |
-          echo "$GPG_PRIVATE_KEY" | gpg --import
-          gpg --list-secret-keys
+          echo "Extracting source package..."
+          dpkg-source -x amdxdna-dkms_*.dsc extracted-source
 
-      - name: Retarget for ${{ matrix.ubuntu.codename }}
-        env:
-          DEBFULLNAME: "Mario Limonciello"
-          DEBEMAIL: "superm1@gmail.com"
+      - name: Update changelog for Ubuntu release
+        working-directory: extracted-source
         run: |
-          # Extract source package
-          dpkg-source -x *.dsc extracted/
-          cd extracted/
+          # Get current version from changelog
+          CURRENT_VERSION=$(dpkg-parsechangelog -S Version)
+          # Remove any existing release suffix (e.g., noble1, questing1)
+          BASE_VERSION=$(echo "$CURRENT_VERSION" | sed 's/[a-z]*[0-9]*$//')
+          # Append new release suffix
+          NEW_VERSION="${BASE_VERSION}${{ matrix.ubuntu_release }}1"
 
-          # Update changelog to target the specific Ubuntu release
-          dch --distribution ${{ matrix.ubuntu.codename }} --force-distribution \
-              "Rebuild for ${{ matrix.ubuntu.name }}"
+          echo "Updating version from $CURRENT_VERSION to $NEW_VERSION"
+          echo "Targeting Ubuntu ${{ matrix.ubuntu_release }}"
 
-          # Build signed source package
-          dpkg-buildpackage -S -sa
+          # Update changelog with new version and target release
+          DEBFULLNAME="AMD XDNA Driver Team" \
+          DEBEMAIL="xdna-driver@amd.com" \
+          dch --newversion "$NEW_VERSION" \
+              --distribution "${{ matrix.ubuntu_release }}" \
+              --force-distribution \
+              "Rebuild for Ubuntu ${{ matrix.ubuntu_release }}"
 
-          # Move artifacts to upload directory
-          cd ..
-          mkdir -p upload/
-          mv *.dsc *.tar.* *.changes upload/
+          # Update PACKAGE_VERSION in dkms.conf to match the new version
+          # echo "Updating dkms.conf PACKAGE_VERSION to $NEW_VERSION"
+          # sed -i "s/^PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$NEW_VERSION\"/" dkms.conf
+
+      - name: Rebuild source package
+        working-directory: extracted-source
+        run: |
+          echo "Building source package for ${{ matrix.ubuntu_release }}..."
+          dpkg-buildpackage -S -d -us -uc
+
+      - name: Setup GPG key
+        run: |
+          echo "Setting up GPG key..."
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --yes
+
+          # Get the key ID
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format LONG | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
+          echo "GPG_KEY_ID=$GPG_KEY_ID" >> $GITHUB_ENV
+
+      - name: Sign source package
+        run: |
+          echo "Signing package with GPG key $GPG_KEY_ID..."
+          debsign -k $GPG_KEY_ID amdxdna-dkms_*${{ matrix.ubuntu_release }}1_source.changes
 
       - name: Upload to PPA
         run: |
-          # Upload the source package to ppa:amd-team/xrt
-          dput ppa:amd-team/xrt upload/*.changes
-
-      - name: Upload signed source artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: source-package-${{ matrix.ubuntu.codename }}
-          path: upload/*
-          retention-days: 90
+          echo "Uploading to ppa:amd-team/xrt for ${{ matrix.ubuntu_release }}..."
+          dput ppa:amd-team/xrt amdxdna-dkms_*${{ matrix.ubuntu_release }}1_source.changes
