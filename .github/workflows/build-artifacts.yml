@@ -192,6 +192,7 @@ jobs:
     strategy:
       matrix:
         ubuntu_release: [noble, questing]
+        build: [2]
 
     name: Upload to PPA for ${{ matrix.ubuntu_release }}
     steps:
@@ -217,7 +218,7 @@ jobs:
           # Remove any existing release suffix (e.g., noble1, questing1)
           BASE_VERSION=$(echo "$CURRENT_VERSION" | sed 's/[a-z]*[0-9]*$//')
           # Append new release suffix
-          NEW_VERSION="${BASE_VERSION}${{ matrix.ubuntu_release }}1"
+          NEW_VERSION="${BASE_VERSION}${{ matrix.ubuntu_release }}${{ matrix.build }}"
 
           echo "Updating version from $CURRENT_VERSION to $NEW_VERSION"
           echo "Targeting Ubuntu ${{ matrix.ubuntu_release }}"
@@ -252,9 +253,9 @@ jobs:
       - name: Sign source package
         run: |
           echo "Signing package with GPG key $GPG_KEY_ID..."
-          debsign -k $GPG_KEY_ID amdxdna-dkms_*${{ matrix.ubuntu_release }}1_source.changes
+          debsign -k $GPG_KEY_ID amdxdna-dkms_*${{ matrix.ubuntu_release }}${{ matrix.build }}.dsc_source.changes
 
       - name: Upload to PPA
         run: |
           echo "Uploading to ppa:amd-team/xrt for ${{ matrix.ubuntu_release }}..."
-          dput ppa:amd-team/xrt amdxdna-dkms_*${{ matrix.ubuntu_release }}1_source.changes
+          dput ppa:amd-team/xrt amdxdna-dkms_*${{ matrix.ubuntu_release }}${{ matrix.build }}_source.changes
