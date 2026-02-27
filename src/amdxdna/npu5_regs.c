@@ -8,6 +8,7 @@
 #include <drm/gpu_scheduler.h>
 #include <linux/sizes.h>
 
+#include "amdxdna_compat.h"
 #include "aie2_pci.h"
 #include "amdxdna_mailbox.h"
 #include "amdxdna_pci_drv.h"

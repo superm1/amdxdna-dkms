@@ -14,6 +14,7 @@
 #include <linux/xarray.h>
 #include <trace/events/amdxdna.h>
 
+#include "amdxdna_compat.h"
 #include "aie2_msg_priv.h"
 #include "aie2_pci.h"
 #include "aie2_solver.h"

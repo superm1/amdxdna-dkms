@@ -16,6 +16,7 @@
 #include <linux/pagemap.h>
 #include <linux/vmalloc.h>
 
+#include "amdxdna_compat.h"
 #include "amdxdna_ctx.h"
 #include "amdxdna_gem.h"
 #include "amdxdna_pci_drv.h"

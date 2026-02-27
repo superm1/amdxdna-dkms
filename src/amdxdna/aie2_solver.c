@@ -10,6 +10,7 @@
 #include <linux/bitmap.h>
 #include <linux/slab.h>
 
+#include "amdxdna_compat.h"
 #include "aie2_solver.h"
 
 struct partition_node {
