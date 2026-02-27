@@ -255,7 +255,13 @@ jobs:
           OLD_FIRMWARE="${{ steps.detect.outputs.old_firmware_commit }}"
           NEW_FIRMWARE="${{ steps.detect.outputs.new_firmware_commit }}"
 
-          PR_BODY=$(cat <<'EOF'
+          # Truncate commit hashes for display
+          OLD_KERNEL_SHORT="${OLD_KERNEL:0:7}"
+          NEW_KERNEL_SHORT="${NEW_KERNEL:0:7}"
+          OLD_FIRMWARE_SHORT="${OLD_FIRMWARE:0:7}"
+          NEW_FIRMWARE_SHORT="${NEW_FIRMWARE:0:7}"
+
+          cat > pr_body.md <<EOF
           ## Summary
 
           This PR contains automated upstream synchronization from:
@@ -264,10 +270,10 @@ jobs:
 
           ### Changes
 
-          - **Kernel version**: $KERNEL_VERSION (commit [$KERNEL_COMMIT](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$KERNEL_COMMIT))
+          - **Kernel version**: $KERNEL_VERSION (commit [$KERNEL_COMMIT](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$NEW_KERNEL))
           - **Package version**: $PKG_VERSION
-          - **drm-misc-fixes**: [`${OLD_KERNEL:0:7}`](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$OLD_KERNEL) → [`${NEW_KERNEL:0:7}`](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$NEW_KERNEL)
-          - **linux-firmware**: [`${OLD_FIRMWARE:0:7}`](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/commit/?id=$OLD_FIRMWARE) → [`${NEW_FIRMWARE:0:7}`](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/commit/?id=$NEW_FIRMWARE)
+          - **drm-misc-fixes**: [\`$OLD_KERNEL_SHORT\`](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$OLD_KERNEL) → [\`$NEW_KERNEL_SHORT\`](https://gitlab.freedesktop.org/drm/misc/kernel/-/commit/$NEW_KERNEL)
+          - **linux-firmware**: [\`$OLD_FIRMWARE_SHORT\`](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/commit/?id=$OLD_FIRMWARE) → [\`$NEW_FIRMWARE_SHORT\`](https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/commit/?id=$NEW_FIRMWARE)
 
           ## Test plan
 
@@ -283,13 +289,10 @@ jobs:
 
           Generated with [Claude Code](https://claude.com/claude-code)
           EOF
-          )
-
-          PR_BODY=$(echo "$PR_BODY" | envsubst)
 
           gh pr create \
             --title "Automated upstream sync: Update to kernel $KERNEL_VERSION ($KERNEL_COMMIT)" \
-            --body "$PR_BODY" \
+            --body-file pr_body.md \
             --base main \
             --head "$BRANCH_NAME"
 
