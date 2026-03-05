@@ -1,3 +1,10 @@
+amdxdna-dkms (7.0.0-rc1+git20260304.8f3c6f08a-1) unstable; urgency=medium
+
+  * Update to kernel 7.0.0-rc1 (commit 8f3c6f08a)
+  * Firmware commit: f69a5e7
+
+ -- GitHub Actions Bot <41898282+github-actions[bot]@users.noreply.github.com>  Thu, 05 Mar 2026 04:20:56 +0000
+
 amdxdna-dkms (7.0.0-rc1+git20260303.a116bac87-1) unstable; urgency=medium
 
   * Update to kernel 7.0.0-rc1 (commit a116bac87)
