@@ -192,7 +192,7 @@ jobs:
     strategy:
       matrix:
         ubuntu_release: [noble, questing, resolute]
-        build: [3]
+        build: [1]
 
     name: Upload to PPA for ${{ matrix.ubuntu_release }}
     steps:
