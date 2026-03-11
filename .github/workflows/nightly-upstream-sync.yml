@@ -368,6 +368,7 @@ jobs:
             --title "Automated upstream sync: Update to kernel $KERNEL_VERSION ($KERNEL_COMMIT)" \
             --body-file pr_body.md \
             --base main \
-            --head "$BRANCH_NAME"
+            --head "$BRANCH_NAME" \
+            --assignee superm1
 
           echo "✓ Pull Request created successfully"
