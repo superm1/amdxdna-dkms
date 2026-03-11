@@ -174,14 +174,15 @@ jobs:
           echo "=== Checking for driver/firmware changes ==="
 
           # Check if src/ or firmware/ directories have changes
-          # Ignore changelog-only updates
-          if git diff --quiet src/ firmware/ 2>/dev/null; then
+          # Exclude metadata files (dkms.conf, changelog, install files)
+          # Only count actual source/firmware file changes
+          if git diff --quiet -- src/ firmware/ ':!src/amdxdna/dkms.conf' 2>/dev/null; then
             echo "✗ No driver or firmware changes detected"
             echo "Changes were only in changelog/metadata"
             HAS_UPDATES="false"
           else
             echo "✓ Driver or firmware changes detected:"
-            git diff --name-only src/ firmware/ 2>/dev/null || true
+            git diff --name-only -- src/ firmware/ ':!src/amdxdna/dkms.conf' 2>/dev/null || true
             HAS_UPDATES="true"
           fi
 
