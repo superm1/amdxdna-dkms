@@ -215,10 +215,11 @@ jobs:
         run: |
           # Get current version from changelog
           CURRENT_VERSION=$(dpkg-parsechangelog -S Version)
-          # Remove any existing release suffix (e.g., noble1, questing1)
-          BASE_VERSION=$(echo "$CURRENT_VERSION" | sed 's/[a-z]*[0-9]*$//')
+          # Remove Debian revision (e.g., -1) and any existing Ubuntu release suffix (e.g., noble1, questing1)
+          # Match: -[digits][optional:letters][optional:digits] at end of string
+          BASE_VERSION=$(echo "$CURRENT_VERSION" | sed 's/-[0-9][a-z]*[0-9]*$//')
           # Append new release suffix
-          NEW_VERSION="${BASE_VERSION}${{ matrix.ubuntu_release }}${{ matrix.build }}"
+          NEW_VERSION="${BASE_VERSION}-${{ matrix.ubuntu_release }}${{ matrix.build }}"
 
           echo "Updating version from $CURRENT_VERSION to $NEW_VERSION"
           echo "Targeting Ubuntu ${{ matrix.ubuntu_release }}"
