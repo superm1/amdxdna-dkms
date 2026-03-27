@@ -258,5 +258,5 @@ jobs:
 
       - name: Upload to PPA
         run: |
-          echo "Uploading to ppa:amd-team/xrt for ${{ matrix.ubuntu_release }}..."
-          dput ppa:amd-team/xrt amdxdna-dkms_*${{ matrix.ubuntu_release }}${{ matrix.build }}_source.changes
+          echo "Uploading to ppa:lemonade-team/stable for ${{ matrix.ubuntu_release }}..."
+          dput ppa:lemonade-team/stable amdxdna-dkms_*${{ matrix.ubuntu_release }}${{ matrix.build }}_source.changes

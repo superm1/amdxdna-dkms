@@ -20,7 +20,7 @@ The package is designed to work with Ubuntu 24.04 LTS kernel variants:
 ### From PPA (Recommended)
 
 ```bash
-sudo add-apt-repository ppa:your-username/amdxdna
+sudo add-apt-repository ppa:lemonade-team/stable
 sudo apt update
 sudo apt install amdxdna-dkms
 ```
